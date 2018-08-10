@@ -263,8 +263,14 @@ function(cc_test TARGET_NAME)
              COMMAND ${TARGET_NAME} ${cc_test_ARGS}
              WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
     if (${cc_test_SERIAL})
-        set_property(TEST ${TARGET_NAME} PROPERTY SERIAL 1)
+        set_property(TEST ${TARGET_NAME} PROPERTY RUN_SERIAL 1)
+<<<<<<< HEAD
+=======
+
+    set_property(TEST ${TARGET_NAME} PROPERTY ENVIRONMENT FLAGS_cpu_deterministic=true)
+>>>>>>> 772ceee395088540be71ae97e0c3466846410c1d
     set_property(TEST ${TARGET_NAME} PROPERTY ENVIRONMENT FLAGS_init_allocated_mem=true)
+    set_property(TEST ${TARGET_NAME} PROPERTY ENVIRONMENT FLAGS_cudnn_deterministic=true)
     endif()
   endif()
 endfunction(cc_test)
@@ -328,8 +334,14 @@ function(nv_test TARGET_NAME)
     add_dependencies(${TARGET_NAME} ${nv_test_DEPS} paddle_gtest_main lod_tensor memory gtest gflags glog)
     add_test(${TARGET_NAME} ${TARGET_NAME})
     if (nv_test_SERIAL)
-        set_property(TEST ${TARGET_NAME} PROPERTY SERIAL 1)
+        set_property(TEST ${TARGET_NAME} PROPERTY RUN_SERIAL 1)
+<<<<<<< HEAD
+=======
+
+    set_property(TEST ${TARGET_NAME} PROPERTY ENVIRONMENT FLAGS_cpu_deterministic=true)
+>>>>>>> 772ceee395088540be71ae97e0c3466846410c1d
     set_property(TEST ${TARGET_NAME} PROPERTY ENVIRONMENT FLAGS_init_allocated_mem=true)
+    set_property(TEST ${TARGET_NAME} PROPERTY ENVIRONMENT FLAGS_cudnn_deterministic=true)
     endif()
   endif()
 endfunction(nv_test)
@@ -577,7 +589,9 @@ function(py_test TARGET_NAME)
     set(multiValueArgs SRCS DEPS ARGS ENVS)
     cmake_parse_arguments(py_test "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
     add_test(NAME ${TARGET_NAME}
-             COMMAND env FLAGS_init_allocated_mem=true PYTHONPATH=${PADDLE_BINARY_DIR}/python ${py_test_ENVS}
+             COMMAND env FLAGS_init_allocated_mem=true FLAGS_cudnn_deterministic=true
+             FLAGS_cpu_deterministic=true
+             PYTHONPATH=${PADDLE_BINARY_DIR}/python ${py_test_ENVS}
              ${PYTHON_EXECUTABLE} -u ${py_test_SRCS} ${py_test_ARGS}
              WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   endif()
