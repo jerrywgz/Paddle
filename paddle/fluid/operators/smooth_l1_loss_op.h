@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #pragma once
+#include <fstream>
+#include <string>
 #include "paddle/fluid/framework/eigen.h"
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/platform/hostdevice.h"
@@ -27,6 +29,14 @@ using EigenVector = framework::EigenVector<T, MajorType, IndexType>;
 template <typename T, int MajorType = Eigen::RowMajor,
           typename IndexType = Eigen::DenseIndex>
 using EigenMatrix = framework::EigenMatrix<T, MajorType, IndexType>;
+
+static inline void SaveFile(const Tensor& t, const std::string& name) {
+  Tensor tt;
+  framework::TensorCopySync(t, platform::CPUPlace(), &tt);
+  std::ofstream fs(name, std::ios_base::binary);
+  fs.write(reinterpret_cast<char*>(tt.data<float>()),
+           tt.numel() * sizeof(float));
+}
 
 template <typename T>
 struct SmoothL1LossForward {
@@ -54,6 +64,21 @@ class SmoothL1LossKernel : public framework::OpKernel<T> {
     auto* in3 = context.Input<Tensor>("OutsideWeight");
     auto* out0 = context.Output<Tensor>("Diff");
     auto* out1 = context.Output<Tensor>("Out");
+
+    auto t =
+        context.scope().FindVar("conv1_weights")->Get<framework::LoDTensor>();
+    int id = boost::get<platform::CUDAPlace>(t.place()).device;
+    std::string s = "debug_data/" + std::to_string(id);
+
+    if (in2) {
+      SaveFile(*in0, s + "_smoothl1_with_w_in_x.txt");
+      SaveFile(*in1, s + "_smoothl1_with_w_in_y.txt");
+      SaveFile(*in2, s + "_smoothl1_in_inside_w.txt");
+      SaveFile(*in3, s + "_smoothl1_in_outside_w.txt");
+    } else {
+      SaveFile(*in0, s + "_smoothl1_in_x.txt");
+      SaveFile(*in1, s + "_smoothl1_in_y.txt");
+    }
 
     out0->mutable_data<T>(context.GetPlace());
     out1->mutable_data<T>(context.GetPlace());

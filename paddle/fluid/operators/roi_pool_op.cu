@@ -178,6 +178,8 @@ class GPUROIPoolOpKernel : public framework::OpKernel<T> {
         height, width, pooled_height, pooled_width,
         roi_batch_id_list_gpu.data<int>(), out->mutable_data<T>(ctx.GetPlace()),
         argmax->mutable_data<int64_t>(ctx.GetPlace()));
+    auto& dev_ctx = ctx.cuda_device_context();
+    dev_ctx.Wait();
   }
 };
 

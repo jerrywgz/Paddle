@@ -12,7 +12,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
+#include <fstream>
 #include <random>
+#include <string>
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/operators/detection/bbox_util.h"
 #include "paddle/fluid/operators/math/math_function.h"
@@ -25,6 +27,12 @@ using LoDTensor = framework::LoDTensor;
 template <typename T, int MajorType = Eigen::RowMajor,
           typename IndexType = Eigen::DenseIndex>
 using EigenMatrix = framework::EigenMatrix<T, MajorType, IndexType>;
+
+template <typename T>
+void Save(const Tensor& t, const std::string& name) {
+  std::ofstream fs(name, std::ios_base::binary);
+  fs.write(reinterpret_cast<const char*>(t.data<T>()), t.numel() * sizeof(T));
+}
 
 class RpnTargetAssignOp : public framework::OperatorWithKernel {
  public:
@@ -313,6 +321,23 @@ class RpnTargetAssignKernel : public framework::OpKernel<T> {
     auto* gt_boxes = context.Input<LoDTensor>("GtBoxes");
     auto* is_crowd = context.Input<LoDTensor>("IsCrowd");
     auto* im_info = context.Input<LoDTensor>("ImInfo");
+
+    if (framework::TensorContainsNAN(*anchor)) {
+      LOG(ERROR) << "Anchor has NaN";
+    }
+    if (framework::TensorContainsInf(*anchor)) {
+      LOG(ERROR) << "Anchor has Inf";
+    }
+
+    auto t =
+        context.scope().FindVar("conv1_weights")->Get<framework::LoDTensor>();
+    int id = boost::get<platform::CUDAPlace>(t.place()).device;
+    std::string s = "debug_data/" + std::to_string(id);
+
+    Save<float>(*anchor, s + "_anchor.txt");
+    Save<float>(*gt_boxes, s + "_gt_box.txt");
+    Save<int>(*is_crowd, s + "_is_crowd.txt");
+    Save<float>(*im_info, s + "_im_info.txt");
 
     auto* loc_index = context.Output<LoDTensor>("LocationIndex");
     auto* score_index = context.Output<LoDTensor>("ScoreIndex");
