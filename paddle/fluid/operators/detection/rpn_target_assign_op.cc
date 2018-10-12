@@ -477,6 +477,10 @@ class RpnTargetAssignKernel : public framework::OpKernel<T> {
     score_index->Resize({total_score_num});
     tgt_bbox->Resize({total_loc_num, 4});
     tgt_lbl->Resize({total_score_num, 1});
+    Save<int>(*loc_index, s + "_loc_index.txt");
+    Save<int>(*score_index, s + "_score_index.txt");
+    Save<float>(*tgt_bbox, s + "_tgt_bbox.txt");
+    Save<int>(*tgt_lbl, s + "_tgt_lbl.txt");
   }
 };
 
