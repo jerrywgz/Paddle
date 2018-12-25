@@ -13,9 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #pragma once
+#include <algorithm>
+#include <limits>
 #include "paddle/fluid/framework/op_registry.h"
-#include "paddle/fluid/platform/hostdevice.h"
-#include "paddle/legacy/utils/Logging.h"
+#include "paddle/fluid/operators/math/math_function.h"
 
 namespace paddle {
 namespace operators {
@@ -69,8 +70,20 @@ class SigmoidCrossEntropyWithLogitsKernel : public framework::OpKernel<T> {
     int ignore_index = context.Attr<int>("ignore_index");
     auto out_data = Out->mutable_data<T>(context.GetPlace());
     int limit = Out->numel();
-    SigmoidCrossEntropyWithLogitsForward<T>(X->data<T>(), Labels->data<T>(),
-                                            ignore_index, limit, out_data);
+    auto x_data = X->data<T>();
+    auto label_data = Labels->data<T>();
+    for (int idx = 0; idx < limit; ++idx) {
+      T x = x_data[idx];
+      T label = label_data[idx];
+      if (static_cast<int>(label) == ignore_index) {
+        out_data[idx] = static_cast<T>(0.);
+      } else {
+        T term1 = (x > 0) ? x : 0;
+        T term2 = x * label;
+        T term3 = std::log(static_cast<T>(1) + std::exp(-std::abs(x)));
+        out_data[idx] = term1 - term2 + term3;
+      }
+    }
   }
 };
 
@@ -87,9 +100,21 @@ class SigmoidCrossEntropyWithLogitsGradKernel : public framework::OpKernel<T> {
 
     int ignore_index = context.Attr<int>("ignore_index");
     int limit = dX->numel();
-    SigmoidCrossEntropyWithLogitsBackward<T>(X->data<T>(), Labels->data<T>(),
-                                             ignore_index, dOut->data<T>(),
-                                             limit, dx_data);
+    auto x_data = X->data<T>();
+    auto label_data = Labels->data<T>();
+    auto dout_data = dOut->data<T>();
+    for (int idx = 0; idx < limit; ++idx) {
+      T x = x_data[idx];
+      T label = label_data[idx];
+      T dout = dout_data[idx];
+      if (static_cast<int>(label) == ignore_index) {
+        dx_data[idx] = static_cast<T>(0.);
+      } else {
+        T simoid_x = static_cast<T>(1) / (static_cast<T>(1) + std::exp(-x));
+        T diff = simoid_x - label;
+        dx_data[idx] = dout * diff;
+      }
+    }
   }
 };
 

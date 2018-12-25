@@ -11,12 +11,9 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
-#pragma once
-#include <algorithm>
-#include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/operators/sigmoid_cross_entropy_with_logits_op.h"
+#include "paddle/fluid/platform/cuda_primitives.h"
 #include "paddle/fluid/platform/hostdevice.h"
-#include "paddle/legacy/utils/Logging.h"
 
 namespace paddle {
 namespace operators {
@@ -41,11 +38,9 @@ static inline int NumBlocks(const int N) {
        i += blockDim.x * gridDim.x)
 
 template <typename T>
-__global__ void SigmoidCrossEntropyWithLogitsForward(const T *x_data,
-                                                     const T *label_data,
-                                                     const int ignore_index,
-                                                     const int limit,
-                                                     T *out_data) {
+__global__ void GPUSigmoidForward(const T *x_data, const T *label_data,
+                                  const int ignore_index, const int limit,
+                                  T *out_data) {
   CUDA_1D_KERNEL_LOOP(i, limit) {
     T x = x_data[i];
     T label = label_data[i];
@@ -61,9 +56,9 @@ __global__ void SigmoidCrossEntropyWithLogitsForward(const T *x_data,
 }
 
 template <typename T>
-__global__ void SigmoidCrossEntropyWithLogitsBackward(
-    const T *x_data, const T *label_data, const int ignore_index,
-    const T *dout_data, const int limit, T *dx_data) {
+__global__ void GPUSigmoidBackward(const T *x_data, const T *label_data,
+                                   const int ignore_index, const T *dout_data,
+                                   const int limit, T *dx_data) {
   CUDA_1D_KERNEL_LOOP(i, limit) {
     T x = x_data[i];
     T label = label_data[i];
@@ -80,7 +75,7 @@ __global__ void SigmoidCrossEntropyWithLogitsBackward(
 
 // Out = max(X, 0) - X * Labels + log(1 + exp(-abs(X)))
 template <typename DeviceContext, typename T>
-class SigmoidCrossEntropyWithLogitsKernel : public framework::OpKernel<T> {
+class GPUSigmoidCrossEntropyWithLogitsKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext &context) const override {
     const Tensor *X = context.Input<Tensor>("X");
@@ -91,7 +86,7 @@ class SigmoidCrossEntropyWithLogitsKernel : public framework::OpKernel<T> {
     int limit = Out->numel();
     int blocks = NumBlocks(limit);
     int threads = kNumCUDAThreads;
-    SigmoidCrossEntropyWithLogitsForward<
+    GPUSigmoidForward<
         T><<<blocks, threads, 0, context.cuda_device_context().stream()>>>(
         X->data<T>(), Labels->data<T>(), ignore_index, limit, out_data);
   }
@@ -99,7 +94,8 @@ class SigmoidCrossEntropyWithLogitsKernel : public framework::OpKernel<T> {
 
 // dX = sigmoid(X) - labels
 template <typename DeviceContext, typename T>
-class SigmoidCrossEntropyWithLogitsGradKernel : public framework::OpKernel<T> {
+class GPUSigmoidCrossEntropyWithLogitsGradKernel
+    : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext &context) const override {
     const Tensor *X = context.Input<Tensor>("X");
@@ -112,7 +108,7 @@ class SigmoidCrossEntropyWithLogitsGradKernel : public framework::OpKernel<T> {
     int limit = dX->numel();
     int blocks = NumBlocks(limit);
     int threads = kNumCUDAThreads;
-    SigmoidCrossEntropyWithLogitsBackward<
+    GPUSigmoidBackward<
         T><<<blocks, threads, 0, context.cuda_device_context().stream()>>>(
         X->data<T>(), Labels->data<T>(), ignore_index, dOut->data<T>(), limit,
         dx_data);
@@ -124,12 +120,12 @@ class SigmoidCrossEntropyWithLogitsGradKernel : public framework::OpKernel<T> {
 
 namespace ops = paddle::operators;
 REGISTER_OP_CUDA_KERNEL(sigmoid_cross_entropy_with_logits,
-                        ops::SigmoidCrossEntropyWithLogitsKernel<
+                        ops::GPUSigmoidCrossEntropyWithLogitsKernel<
                             paddle::platform::CUDADeviceContext, float>,
-                        ops::SigmoidCrossEntropyWithLogitsKernel<
+                        ops::GPUSigmoidCrossEntropyWithLogitsKernel<
                             paddle::platform::CUDADeviceContext, double>);
 REGISTER_OP_CUDA_KERNEL(sigmoid_cross_entropy_with_logits_grad,
-                        ops::SigmoidCrossEntropyWithLogitsGradKernel<
+                        ops::GPUSigmoidCrossEntropyWithLogitsGradKernel<
                             paddle::platform::CUDADeviceContext, float>,
-                        ops::SigmoidCrossEntropyWithLogitsGradKernel<
+                        ops::GPUSigmoidCrossEntropyWithLogitsGradKernel<
                             paddle::platform::CUDADeviceContext, double>);
