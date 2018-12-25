@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 #pragma once
 #include <algorithm>
-#include "/paddle/fluid/operators/sigmoid_cross_entropy_with_logits_op.h"
 #include "paddle/fluid/framework/op_registry.h"
+#include "paddle/fluid/operators/sigmoid_cross_entropy_with_logits_op.h"
 #include "paddle/fluid/platform/hostdevice.h"
 #include "paddle/legacy/utils/Logging.h"
 
