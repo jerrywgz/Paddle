@@ -145,9 +145,14 @@ REGISTER_OPERATOR(sigmoid_cross_entropy_with_logits,
                   paddle::framework::DefaultGradOpDescMaker<true>);
 REGISTER_OPERATOR(sigmoid_cross_entropy_with_logits_grad,
                   ops::SigmoidCrossEntropyWithLogitsGradOp);
-REGISTER_OP_CPU_KERNEL(sigmoid_cross_entropy_with_logits,
-                       ops::SigmoidCrossEntropyWithLogitsKernel<
-                           paddle::platform::CPUDeviceContext, float>);
+REGISTER_OP_CPU_KERNEL(
+    sigmoid_cross_entropy_with_logits,
+    ops::SigmoidCrossEntropyWithLogitsKernel<paddle::platform::CPUDeviceContext,
+                                             float>,
+    ops::SigmoidCrossEntropyWithLogitsKernel<paddle::platform::CPUDeviceContext,
+                                             double>);
 REGISTER_OP_CPU_KERNEL(sigmoid_cross_entropy_with_logits_grad,
                        ops::SigmoidCrossEntropyWithLogitsGradKernel<
-                           paddle::platform::CPUDeviceContext, float>);
+                           paddle::platform::CPUDeviceContext, float>,
+                       ops::SigmoidCrossEntropyWithLogitsGradKernel<
+                           paddle::platform::CPUDeviceContext, double>);
