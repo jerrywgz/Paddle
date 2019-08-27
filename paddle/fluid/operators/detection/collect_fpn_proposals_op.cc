@@ -96,10 +96,48 @@ by objectness confidence. Select the post_nms_topN RoIs in
 )DOC");
   }
 };
+
+class CollectFpnProposals2Op : public CollectFpnProposalsOp {
+ public:
+  CollectFpnProposals2Op(const std::string &type,
+                         const framework::VariableNameMap &inputs,
+                         const framework::VariableNameMap &outputs,
+                         const framework::AttributeMap &attrs)
+      : CollectFpnProposalsOp(type, inputs, outputs, attrs) {}
+
+  void InferShape(framework::InferShapeContext *ctx) const override {
+    PADDLE_ENFORCE(
+        ctx->HasOutput("Score"),
+        "Output(Score) of CollectFpnProposalsOp should not be null.");
+    auto post_nms_topN = ctx->Attrs().Get<int>("post_nms_topN");
+    ctx->SetOutputDim("Score", {post_nms_topN, 1});
+    if (!ctx->IsRuntime()) {  // Runtime LoD infershape will be computed
+      // in Kernel.
+      ctx->ShareLoD("MultiLevelRois", "Score");
+    }
+    CollectFpnProposalsOp::InferShape(ctx);
+  }
+};
+
+class CollectFpnProposals2OpMaker : public CollectFpnProposalsOpMaker {
+ public:
+  void Make() override {
+    ReshapeOpMaker::Make();
+    AddOutput("Score", "Return score corresponding FpnRois").AsIntermediate();
+  }
+};
+
 }  // namespace operators
 }  // namespace paddle
 
 namespace ops = paddle::operators;
+REGISTER_OPERATOR(collect_fpn_proposals2, ops::CollectFpnProposals2Op,
+                  ops::CollectFpnProposals2OpMaker,
+                  paddle::framework::EmptyGradOpMaker);
+REGISTER_OP_CPU_KERNEL(collect_fpn_proposals2,
+                       ops::CollectFpnProposalsOpKernel<float>,
+                       ops::CollectFpnProposalsOpKernel<double>);
+
 REGISTER_OPERATOR(collect_fpn_proposals, ops::CollectFpnProposalsOp,
                   ops::CollectFpnProposalsOpMaker,
                   paddle::framework::EmptyGradOpMaker);
