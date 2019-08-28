@@ -44,14 +44,52 @@ class AnchorGeneratorOpKernel : public framework::OpKernel<T> {
     stride_width = stride[0];
     stride_height = stride[1];
 
-    int num_anchors = aspect_ratios.size() * anchor_sizes.size();
+    // wong
+    int anchors_offset[] = {-2,  -2,   18,   18,  -10, -9,   26,   25,   -23,
+                            -20, 39,   36,   -43, -34, 59,   49,   -63,  -54,
+                            79,  69,   -96,  -77, 112, 93,   -137, -118, 153,
+                            134, -204, -188, 220, 204, -281, -395, 296,  441};
+
+    int anchors_offset2[] = {-18, -31, 34,  47,  -22, -22, 38,  38,  -33,
+                             -44, 49,  60,  -2,  -2,  18,  18,  -10, -14,
+                             26,  30,  -14, -22, 30,  38,  -9,  -26, 25,
+                             42,  -92, -92, 108, 108, -2,  -15, 18,  31};
+
+    if (offset > 0.6) {
+      memcpy(anchors_offset, anchors_offset2, sizeof(anchors_offset));
+      std::cout
+          << "\n!!!---!!!  offset > 0.6, Use anchors_offset2-Marker --HGQ \n"
+          << anchors_offset << std::endl;
+    } else {
+      // memcpy(anchors_offset, anchors_offset2, sizeof(anchors_offset));
+      std::cout
+          << "\n!!!---!!!  offset <= 0.6, Use anchors_offset-rfcn  --HGQ \n"
+          << anchors_offset << std::endl;
+    }
+
+    // int num_anchors = aspect_ratios.size() * anchor_sizes.size();
+    int num_anchors = sizeof(anchors_offset) / (sizeof(int) * 4);
+    int orin_num_anchors = aspect_ratios.size() * anchor_sizes.size();
+
+    std::cout << "orin_num_anchors: " << orin_num_anchors << std::endl;
+    std::cout << "aspect_ratios.size(): " << aspect_ratios.size() << std::endl;
+    std::cout << "anchor_sizes.size(): " << anchor_sizes.size() << std::endl;
 
     anchors->mutable_data<T>(ctx.GetPlace());
     vars->mutable_data<T>(ctx.GetPlace());
 
     auto e_anchors = framework::EigenTensor<T, 4>::From(*anchors);
+    std::cout << "feature_height: " << feature_height << std::endl;
+    std::cout << "feature_width: " << feature_width << std::endl;
+    std::cout << "num_anchors: " << num_anchors << std::endl;
+    std::cout << "stride_width: " << stride_width << std::endl;
+    std::cout << "stride_height: " << stride_height << std::endl;
+    stride_width = 16;
+    stride_height = 16;
+
     for (int h_idx = 0; h_idx < feature_height; ++h_idx) {
       for (int w_idx = 0; w_idx < feature_width; ++w_idx) {
+        /*
         T x_ctr = (w_idx * stride_width) + offset * (stride_width - 1);
         T y_ctr = (h_idx * stride_height) + offset * (stride_height - 1);
         T area, area_ratios;
@@ -81,6 +119,26 @@ class AnchorGeneratorOpKernel : public framework::OpKernel<T> {
                 (y_ctr + 0.5 * (anchor_height - 1));
             idx++;
           }
+        }
+        */
+        int idx = 0;
+        for (idx = 0; idx < num_anchors; idx++) {
+          e_anchors(h_idx, w_idx, idx, 0) =
+              anchors_offset[idx * 4 + 0] + w_idx * stride_width;
+          e_anchors(h_idx, w_idx, idx, 1) =
+              anchors_offset[idx * 4 + 1] + h_idx * stride_height;
+          e_anchors(h_idx, w_idx, idx, 2) =
+              anchors_offset[idx * 4 + 2] + w_idx * stride_width;
+          e_anchors(h_idx, w_idx, idx, 3) =
+              anchors_offset[idx * 4 + 3] + h_idx * stride_height;
+          // std::cout << "e_anchors(h_idx, w_idx, idx, 0): " <<
+          // e_anchors(h_idx, w_idx, idx, 0) << std::endl;
+          // std::cout << "e_anchors(h_idx, w_idx, idx, 1): " <<
+          // e_anchors(h_idx, w_idx, idx, 1) << std::endl;
+          // std::cout << "e_anchors(h_idx, w_idx, idx, 2): " <<
+          // e_anchors(h_idx, w_idx, idx, 2) << std::endl;
+          // std::cout << "e_anchors(h_idx, w_idx, idx, 3): " <<
+          // e_anchors(h_idx, w_idx, idx, 3) << std::endl;
         }
       }
     }

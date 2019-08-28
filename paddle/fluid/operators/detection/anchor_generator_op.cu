@@ -18,46 +18,26 @@ namespace paddle {
 namespace operators {
 
 template <typename T>
-__global__ void GenAnchors(T* out, const T* aspect_ratios, const int ar_num,
-                           const T* anchor_sizes, const int as_num,
-                           const T* stride, const int sd_num, const int height,
-                           const int width, const T offset) {
-  int num_anchors = as_num * ar_num;
+__global__ void GenAnchors(T* out, const int* anchors_offset,
+                           const T stride_width, const T stride_height,
+                           const int offset_size, const int height,
+                           const int width, const int num_anchors) {
   int box_num = height * width * num_anchors;
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < box_num;
        i += blockDim.x * gridDim.x) {
     int h_idx = i / (num_anchors * width);
     int w_idx = (i / num_anchors) % width;
-    T stride_width = stride[0];
-    T stride_height = stride[1];
-    T x_ctr = (w_idx * stride_width) + offset * (stride_width - 1);
-    T y_ctr = (h_idx * stride_height) + offset * (stride_height - 1);
-    T area, area_ratios;
-    T base_w, base_h;
-    T scale_w, scale_h;
-    T anchor_width, anchor_height;
-    int anch_idx = i % num_anchors;
-    int ar_idx = anch_idx / as_num;
-    int as_idx = anch_idx % as_num;
-    T aspect_ratio = aspect_ratios[ar_idx];
-    T anchor_size = anchor_sizes[as_idx];
-    area = stride_width * stride_height;
-    area_ratios = area / aspect_ratio;
-    base_w = round(sqrt(area_ratios));
-    base_h = round(base_w * aspect_ratio);
-    scale_w = anchor_size / stride_width;
-    scale_h = anchor_size / stride_height;
-    anchor_width = scale_w * base_w;
-    anchor_height = scale_h * base_h;
-
-    T xmin = (x_ctr - 0.5 * (anchor_width - 1));
-    T ymin = (y_ctr - 0.5 * (anchor_height - 1));
-    T xmax = (x_ctr + 0.5 * (anchor_width - 1));
-    T ymax = (y_ctr + 0.5 * (anchor_height - 1));
-    out[i * 4] = xmin;
-    out[i * 4 + 1] = ymin;
-    out[i * 4 + 2] = xmax;
-    out[i * 4 + 3] = ymax;
+    int idx = i % num_anchors;
+    if (idx < offset_size) {
+      T xmin = anchors_offset[idx * 4] + w_idx * stride_width;
+      T ymin = anchors_offset[idx * 4 + 1] + h_idx * stride_height;
+      T xmax = anchors_offset[idx * 4 + 2] + w_idx * stride_width;
+      T ymax = anchors_offset[idx * 4 + 3] + h_idx * stride_height;
+      out[i * 4] = xmin;
+      out[i * 4 + 1] = ymin;
+      out[i * 4 + 2] = xmax;
+      out[i * 4 + 3] = ymax;
+    }
   }
 }
 
@@ -95,26 +75,29 @@ class AnchorGeneratorOpCUDAKernel : public framework::OpKernel<T> {
     stride_width = 16;
     stride_height = 16;
     // wong
-    int anchors_offset[];
-    int anchors_offset1[] = {-2,  -2,   18,   18,  -10, -9,   26,   25,   -23,
-                             -20, 39,   36,   -43, -34, 59,   49,   -63,  -54,
-                             79,  69,   -96,  -77, 112, 93,   -137, -118, 153,
-                             134, -204, -188, 220, 204, -281, -395, 296,  441};
+    framework::Tensor anchors_offset;
+    std::vector<int> anchors_offset1 = {
+        -2,   -2,   18,  18,  -10,  -9,   26,  25,  -23,  -20,  39,  36,
+        -43,  -34,  59,  49,  -63,  -54,  79,  69,  -96,  -77,  112, 93,
+        -137, -118, 153, 134, -204, -188, 220, 204, -281, -395, 296, 441};
 
-    int anchors_offset2[] = {-18, -31, 34,  47,  -22, -22, 38,  38,  -33,
-                             -44, 49,  60,  -2,  -2,  18,  18,  -10, -14,
-                             26,  30,  -14, -22, 30,  38,  -9,  -26, 25,
-                             42,  -92, -92, 108, 108, -2,  -15, 18,  31};
+    std::vector<int> anchors_offset2 = {
+        -18, -31, 34, 47, -22, -22, 38,  38,  -33, -44, 49, 60,
+        -2,  -2,  18, 18, -10, -14, 26,  30,  -14, -22, 30, 38,
+        -9,  -26, 25, 42, -92, -92, 108, 108, -2,  -15, 18, 31};
     if (offset > 0.6) {
-      anchors_offset = anchors_offset1;
+      framework::TensorFromVector(anchors_offset2, ctx.device_context(),
+                                  &anchors_offset);
     } else {
-      anchors_offset = anchors_offset2;
+      framework::TensorFromVector(anchors_offset1, ctx.device_context(),
+                                  &anchors_offset);
     }
-
-    // int num_anchors = aspect_ratios.size() * anchor_sizes.size();
-    int num_anchors = sizeof(anchors_offset) / (sizeof(int) * 4);
+    int num_anchors = aspect_ratios.size() * anchor_sizes.size();
+    // int num_anchors = sizeof(anchors_offset) / (sizeof(int) * 4);
+    std::cout << "num_anchors: " << num_anchors << std::endl;
     int box_num = width * height * num_anchors;
-
+    int offset_size = static_cast<int>(anchors_offset.numel() / 4);
+    std::cout << "offset_size: " << offset_size << std::endl;
     int block = 512;
     int grid = (box_num + block - 1) / block;
 
@@ -124,25 +107,16 @@ class AnchorGeneratorOpCUDAKernel : public framework::OpKernel<T> {
     anchors->mutable_data<T>(ctx.GetPlace());
     vars->mutable_data<T>(ctx.GetPlace());
 
-    framework::Tensor ar;
-    framework::TensorFromVector(aspect_ratios, ctx.device_context(), &ar);
-
-    framework::Tensor as;
-    framework::TensorFromVector(anchor_sizes, ctx.device_context(), &as);
-
-    framework::Tensor sd;
-    framework::TensorFromVector(stride, ctx.device_context(), &sd);
-
     GenAnchors<T><<<grid, block, 0, stream>>>(
-        anchors->data<T>(), ar.data<T>(), aspect_ratios.size(), as.data<T>(),
-        anchor_sizes.size(), sd.data<T>(), stride.size(), height, width,
-        offset);
+        anchors->data<T>(), anchors_offset.data<int>(), stride_width,
+        stride_height, offset_size, height, width, num_anchors);
 
     framework::Tensor v;
     framework::TensorFromVector(variances, ctx.device_context(), &v);
     grid = (box_num * 4 + block - 1) / block;
+    int var_num = width * height * offset_size;
     SetVariance<T><<<grid, block, 0, stream>>>(vars->data<T>(), v.data<T>(),
-                                               variances.size(), box_num * 4);
+                                               variances.size(), var_num * 4);
   }
 };  // namespace operators
 
