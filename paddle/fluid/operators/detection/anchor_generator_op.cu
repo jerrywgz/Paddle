@@ -88,8 +88,31 @@ class AnchorGeneratorOpCUDAKernel : public framework::OpKernel<T> {
     auto width = input->dims()[3];
     auto height = input->dims()[2];
 
-    int num_anchors = aspect_ratios.size() * anchor_sizes.size();
+    T stride_width, stride_height;
+    stride_width = stride[0];
+    stride_height = stride[1];
 
+    stride_width = 16;
+    stride_height = 16;
+    // wong
+    int anchors_offset[];
+    int anchors_offset1[] = {-2,  -2,   18,   18,  -10, -9,   26,   25,   -23,
+                             -20, 39,   36,   -43, -34, 59,   49,   -63,  -54,
+                             79,  69,   -96,  -77, 112, 93,   -137, -118, 153,
+                             134, -204, -188, 220, 204, -281, -395, 296,  441};
+
+    int anchors_offset2[] = {-18, -31, 34,  47,  -22, -22, 38,  38,  -33,
+                             -44, 49,  60,  -2,  -2,  18,  18,  -10, -14,
+                             26,  30,  -14, -22, 30,  38,  -9,  -26, 25,
+                             42,  -92, -92, 108, 108, -2,  -15, 18,  31};
+    if (offset > 0.6) {
+      anchors_offset = anchors_offset1;
+    } else {
+      anchors_offset = anchors_offset2;
+    }
+
+    // int num_anchors = aspect_ratios.size() * anchor_sizes.size();
+    int num_anchors = sizeof(anchors_offset) / (sizeof(int) * 4);
     int box_num = width * height * num_anchors;
 
     int block = 512;
