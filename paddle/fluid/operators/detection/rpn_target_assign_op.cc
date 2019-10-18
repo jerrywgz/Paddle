@@ -538,6 +538,10 @@ class RpnTargetAssignOpMaker : public framework::OpProtoAndCheckerMaker {
                   "NOTE: DO NOT set this flag to false in training. "
                   "Setting this flag to false is only useful in unittest.")
         .SetDefault(true);
+    AddAttr<bool>("widerface_offset",
+                  "A flag for WiderFace dataset. When it is set to True,"
+                  "the side of bbox is calculated by xmax-xmin.")
+        .SetDefault(false);
     AddOutput(
         "LocationIndex",
         "(Tensor), The indexes of foreground anchors in all RPN anchors, the "
@@ -861,6 +865,7 @@ class RetinanetTargetAssignKernel : public framework::OpKernel<T> {
     auto* tgt_lbl = context.Output<LoDTensor>("TargetLabel");
     auto* bbox_inside_weight = context.Output<LoDTensor>("BBoxInsideWeight");
     auto* fg_num = context.Output<LoDTensor>("ForegroundNumber");
+    bool widerface_offset = context.Attr<bool>("widerface_offset");
 
     PADDLE_ENFORCE_EQ(gt_boxes->lod().size(), 1UL,
                       "RetinanetTargetAssignOp gt_boxes needs 1 level of LoD");
@@ -968,7 +973,7 @@ class RetinanetTargetAssignKernel : public framework::OpKernel<T> {
       Gather<T>(ncrowd_gt_boxes.data<T>(), 4, sampled_gt_index.data<int>(),
                 loc_num, sampled_gt_data);
       sampled_tgt_bbox.mutable_data<T>({loc_num, 4}, place);
-      BoxToDelta<T>(loc_num, sampled_anchor, sampled_gt, nullptr, false,
+      BoxToDelta<T>(loc_num, sampled_anchor, sampled_gt, nullptr, widerface_offset,
                     &sampled_tgt_bbox);
 
       // Add anchor offset

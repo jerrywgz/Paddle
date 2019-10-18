@@ -175,7 +175,7 @@ template <typename T>
 class RetinanetDetectionOutputKernel : public framework::OpKernel<T> {
  public:
   void NMSFast(const std::vector<std::vector<T>>& cls_dets,
-               const T nms_threshold, const T eta,
+               const T nms_threshold, const T eta, const bool widerface_offset,
                std::vector<int>* selected_indices) const {
     int64_t num_boxes = cls_dets.size();
     std::vector<std::pair<T, int>> sorted_indices;
@@ -196,7 +196,7 @@ class RetinanetDetectionOutputKernel : public framework::OpKernel<T> {
           const int kept_idx = (*selected_indices)[k];
           T overlap = T(0.);
 
-          overlap = JaccardOverlap<T>(cls_dets[idx], cls_dets[kept_idx], false);
+          overlap = JaccardOverlap<T>(cls_dets[idx], cls_dets[kept_idx], widerface_offset);
           keep = overlap <= adaptive_threshold;
         } else {
           break;
@@ -272,14 +272,15 @@ class RetinanetDetectionOutputKernel : public framework::OpKernel<T> {
 
   void MultiClassNMS(const std::map<int, std::vector<std::vector<T>>>& preds,
                      int class_num, const int keep_top_k, const T nms_threshold,
-                     const T nms_eta, std::vector<std::vector<T>>* nmsed_out,
+                     const T nms_eta, const bool widerface_offset, 
+                     std::vector<std::vector<T>>* nmsed_out,
                      int* num_nmsed_out) const {
     std::map<int, std::vector<int>> indices;
     int num_det = 0;
     for (int c = 0; c < class_num; ++c) {
       if (static_cast<bool>(preds.count(c))) {
         const std::vector<std::vector<T>> cls_dets = preds.at(c);
-        NMSFast(cls_dets, nms_threshold, nms_eta, &(indices[c]));
+        NMSFast(cls_dets, nms_threshold, nms_eta, widerface_offset, &(indices[c]));
         num_det += indices[c].size();
       }
     }
@@ -323,7 +324,7 @@ class RetinanetDetectionOutputKernel : public framework::OpKernel<T> {
                                 const std::vector<Tensor>& scores,
                                 const std::vector<Tensor>& bboxes,
                                 const std::vector<Tensor>& anchors,
-                                const Tensor& im_info,
+                                const Tensor& im_info, const bool widerface_offset,
                                 std::vector<std::vector<T>>* nmsed_out,
                                 int* num_nmsed_out) const {
     int64_t nms_top_k = ctx.Attr<int>("nms_top_k");
@@ -364,8 +365,8 @@ class RetinanetDetectionOutputKernel : public framework::OpKernel<T> {
                              im_scale, class_num, sorted_indices, &preds);
     }
 
-    MultiClassNMS(preds, class_num, keep_top_k, nms_threshold, nms_eta,
-                  nmsed_out, num_nmsed_out);
+    MultiClassNMS(preds, class_num, keep_top_k, nms_threshold, nms_eta, 
+                  widerface_offset, nmsed_out, num_nmsed_out);
   }
 
   void MultiClassOutput(const platform::DeviceContext& ctx,
@@ -391,6 +392,7 @@ class RetinanetDetectionOutputKernel : public framework::OpKernel<T> {
     auto anchors = ctx.MultiInput<Tensor>("Anchors");
     auto* im_info = ctx.Input<LoDTensor>("ImInfo");
     auto* outs = ctx.Output<LoDTensor>("Out");
+    bool widerface_offset = context.Attr<bool>("widerface_offset");
 
     std::vector<Tensor> boxes_list(boxes.size());
     std::vector<Tensor> scores_list(scores.size());
@@ -425,8 +427,8 @@ class RetinanetDetectionOutputKernel : public framework::OpKernel<T> {
 
       std::vector<std::vector<T>> nmsed_out;
       RetinanetDetectionOutput(ctx, score_per_batch_list, box_per_batch_list,
-                               anchors_list, im_info_slice, &nmsed_out,
-                               &num_nmsed_out);
+                               anchors_list, im_info_slice, widerface_offset, 
+                               &nmsed_out, &num_nmsed_out);
       all_nmsed_out.push_back(nmsed_out);
       batch_starts.push_back(batch_starts.back() + num_nmsed_out);
     }
@@ -503,6 +505,10 @@ class RetinanetDetectionOutputOpMaker
         "(int64_t) "
         "Number of total bounding boxes to be kept per image after NMS "
         "step.");
+    AddAttr<bool>("widerface_offset",
+                  "A flag for WiderFace dataset. When it is set to True,"
+                  "the side of bbox is calculated by xmax-xmin.")
+        .SetDefault(false);
     AddOutput("Out",
               "(LoDTensor) A 2-D LoDTensor with shape [No, 6] represents the "
               "detections. Each row has 6 values: "

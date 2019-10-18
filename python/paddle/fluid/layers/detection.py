@@ -71,7 +71,8 @@ def retinanet_target_assign(bbox_pred,
                             im_info,
                             num_classes=1,
                             positive_overlap=0.5,
-                            negative_overlap=0.4):
+                            negative_overlap=0.4,
+                            widerface_offset=False):
     """
     **Target Assign Layer for the detector RetinaNet.**
 
@@ -168,6 +169,8 @@ def retinanet_target_assign(bbox_pred,
             value is 0.4. :attr:`negative_overlap` should be less than or equal to
             :attr:`positive_overlap`, if not, the actual value of
             :attr:`positive_overlap` is :attr:`negative_overlap`.
+        widerface_offset(bool): Whether to use widerface_offset. if it is set to True,
+            the size of bbox is calculated by xmax-xmin. False by default
 
     Returns:
         A tuple with 6 Variables:
@@ -267,7 +270,8 @@ def retinanet_target_assign(bbox_pred,
         },
         attrs={
             'positive_overlap': positive_overlap,
-            'negative_overlap': negative_overlap
+            'negative_overlap': negative_overlap,
+            'widerface_offset': widerface_offset
         })
 
     loc_index.stop_gradient = True
@@ -2877,7 +2881,8 @@ def retinanet_detection_output(bboxes,
                                nms_top_k=1000,
                                keep_top_k=100,
                                nms_threshold=0.3,
-                               nms_eta=1.):
+                               nms_eta=1.,
+                               widerface_offset=False):
     """
     **Detection Output Layer for the detector RetinaNet.**
 
@@ -2936,6 +2941,8 @@ def retinanet_detection_output(bboxes,
             = :attr:`nms_threshold` * :attr:`nms_eta`  will not be stopped until
             the actual value of :attr:`nms_threshold` is lower than or equal to
             0.5.
+        widerface_offset(bool): Whether to use widerface_offset. if it is set to True,
+            the size of bbox is calculated by xmax-xmin. False by default
 
     **Notice**: In some cases where the image sizes are very small, it's possible
     that there is no detection if :attr:`score_threshold` are used at all
@@ -3001,6 +3008,7 @@ def retinanet_detection_output(bboxes,
             'nms_threshold': nms_threshold,
             'keep_top_k': keep_top_k,
             'nms_eta': 1.,
+            'widerface_offset': widerface_offset,
         },
         outputs={'Out': output})
     output.stop_gradient = True
