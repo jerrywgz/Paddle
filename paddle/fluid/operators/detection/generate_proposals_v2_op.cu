@@ -39,6 +39,8 @@ static std::pair<Tensor, Tensor> ProposalForOneImage(
     float eta, bool pixel_offset) {
   // 1. pre nms
   Tensor scores_sort, index_sort;
+
+  LOG(ERROR)<<"DEBUG!!!!";
   SortDescending<T>(ctx, scores, &scores_sort, &index_sort);
   int num = scores.numel();
   int pre_nms_num = (pre_nms_top_n <= 0 || pre_nms_top_n > num) ? scores.numel()
@@ -50,6 +52,7 @@ static std::pair<Tensor, Tensor> ProposalForOneImage(
   Tensor proposals;
   proposals.mutable_data<T>({pre_nms_num, 4}, ctx.GetPlace());
 
+  LOG(ERROR)<<"DEBUG!!!!";
   {
     platform::ForRange<platform::CUDADeviceContext> for_range(ctx, pre_nms_num);
     for_range(BoxDecodeAndClipFunctor<T>{
@@ -57,24 +60,43 @@ static std::pair<Tensor, Tensor> ProposalForOneImage(
         index_sort.data<int>(), im_shape.data<T>(), proposals.data<T>(),
         pixel_offset});
   }
+  LOG(ERROR)<<"DEBUG!!!!";
 
   // 3. filter
   Tensor keep_index, keep_num_t;
+  math::SetConstant<platform::CUDADeviceContext, int> set_zero;
   keep_index.mutable_data<int>({pre_nms_num}, ctx.GetPlace());
   keep_num_t.mutable_data<int>({1}, ctx.GetPlace());
+  set_zero(ctx, &keep_index, static_cast<int>(0));
+  set_zero(ctx, &keep_num_t, static_cast<int>(0));
   min_size = std::max(min_size, 1.0f);
   auto stream = ctx.stream();
+  int temp;
+  LOG(ERROR)<<"DEBUG!!!!";
+  const auto gpu_place = BOOST_GET_CONST(platform::CUDAPlace, ctx.GetPlace());
+  ctx.Wait();
+  memory::Copy(platform::CPUPlace(), &temp, gpu_place,
+               keep_num_t.data<int>(), sizeof(int), ctx.stream());
+  ctx.Wait();
+  LOG(ERROR)<<"temp: "<<temp;
+  LOG(ERROR)<<"DEBUG!!!!";
   FilterBBoxes<T, 512><<<1, 512, 0, stream>>>(
       proposals.data<T>(), im_shape.data<T>(), min_size, pre_nms_num,
       keep_num_t.data<int>(), keep_index.data<int>(), false, pixel_offset);
+  ctx.Wait();
+
+  LOG(ERROR)<<"DEBUG!!!!";
   int keep_num;
-  const auto gpu_place = BOOST_GET_CONST(platform::CUDAPlace, ctx.GetPlace());
+  LOG(ERROR)<<"DEBUG!!!!";
+  //const auto gpu_place = BOOST_GET_CONST(platform::CUDAPlace, ctx.GetPlace());
   memory::Copy(platform::CPUPlace(), &keep_num, gpu_place,
                keep_num_t.data<int>(), sizeof(int), ctx.stream());
   ctx.Wait();
+  LOG(ERROR)<<"DEBUG!!!!";
   keep_index.Resize({keep_num});
 
   Tensor scores_filter, proposals_filter;
+  LOG(ERROR)<<"DEBUG!!!!";
   // Handle the case when there is no keep index left
   if (keep_num == 0) {
     math::SetConstant<platform::CUDADeviceContext, T> set_zero;
@@ -84,28 +106,34 @@ static std::pair<Tensor, Tensor> ProposalForOneImage(
     set_zero(ctx, &scores_filter, static_cast<T>(0));
     return std::make_pair(proposals_filter, scores_filter);
   }
+  LOG(ERROR)<<"DEBUG!!!!";
   proposals_filter.mutable_data<T>({keep_num, 4}, ctx.GetPlace());
   scores_filter.mutable_data<T>({keep_num, 1}, ctx.GetPlace());
   GPUGather<T>(ctx, proposals, keep_index, &proposals_filter);
   GPUGather<T>(ctx, scores_sort, keep_index, &scores_filter);
+  LOG(ERROR)<<"DEBUG!!!!";
 
   if (nms_thresh <= 0) {
     return std::make_pair(proposals_filter, scores_filter);
   }
 
+  LOG(ERROR)<<"DEBUG!!!!";
   // 4. nms
   Tensor keep_nms;
   NMS<T>(ctx, proposals_filter, keep_index, nms_thresh, &keep_nms,
          pixel_offset);
+  LOG(ERROR)<<"DEBUG!!!!";
   if (post_nms_top_n > 0 && post_nms_top_n < keep_nms.numel()) {
     keep_nms.Resize({post_nms_top_n});
   }
+  LOG(ERROR)<<"DEBUG!!!!";
 
   Tensor scores_nms, proposals_nms;
   proposals_nms.mutable_data<T>({keep_nms.numel(), 4}, ctx.GetPlace());
   scores_nms.mutable_data<T>({keep_nms.numel(), 1}, ctx.GetPlace());
   GPUGather<T>(ctx, proposals_filter, keep_nms, &proposals_nms);
   GPUGather<T>(ctx, scores_filter, keep_nms, &scores_nms);
+  LOG(ERROR)<<"DEBUG!!!!";
 
   return std::make_pair(proposals_nms, scores_nms);
 }
@@ -132,6 +160,7 @@ class CUDAGenerateProposalsV2Kernel : public framework::OpKernel<T> {
     float min_size = context.Attr<float>("min_size");
     float eta = context.Attr<float>("eta");
     bool pixel_offset = context.Attr<bool>("pixel_offset");
+    LOG(ERROR)<<"DEBUG!!!!";
     PADDLE_ENFORCE_GE(eta, 1.,
                       platform::errors::InvalidArgument(
                           "Not support adaptive NMS. The attribute 'eta' "
@@ -151,12 +180,14 @@ class CUDAGenerateProposalsV2Kernel : public framework::OpKernel<T> {
     int64_t h_bbox = bbox_dim[2];
     int64_t w_bbox = bbox_dim[3];
 
+    LOG(ERROR)<<"DEBUG!!!!";
     Tensor bbox_deltas_swap, scores_swap;
     bbox_deltas_swap.mutable_data<T>({num, h_bbox, w_bbox, c_bbox},
                                      dev_ctx.GetPlace());
     scores_swap.mutable_data<T>({num, h_score, w_score, c_score},
                                 dev_ctx.GetPlace());
 
+    LOG(ERROR)<<"DEBUG!!!!";
     math::Transpose<DeviceContext, T, 4> trans;
     std::vector<int> axis = {0, 2, 3, 1};
     trans(dev_ctx, *bbox_deltas, &bbox_deltas_swap, axis);
@@ -178,6 +209,7 @@ class CUDAGenerateProposalsV2Kernel : public framework::OpKernel<T> {
     int64_t num_proposals = 0;
     std::vector<size_t> offset(1, 0);
     std::vector<int> tmp_num;
+    LOG(ERROR)<<"DEBUG!!!!";
 
     for (int64_t i = 0; i < num; ++i) {
       Tensor im_shape_slice = im_shape->Slice(i, i + 1);
@@ -186,11 +218,13 @@ class CUDAGenerateProposalsV2Kernel : public framework::OpKernel<T> {
 
       bbox_deltas_slice.Resize({h_bbox * w_bbox * c_bbox / 4, 4});
       scores_slice.Resize({h_score * w_score * c_score, 1});
+      LOG(ERROR)<<"DEBUG!!!!";
 
       std::pair<Tensor, Tensor> box_score_pair = ProposalForOneImage<T>(
           dev_ctx, im_shape_slice, anchors, variances, bbox_deltas_slice,
           scores_slice, pre_nms_top_n, post_nms_top_n, nms_thresh, min_size,
           eta, pixel_offset);
+      LOG(ERROR)<<"DEBUG!!!!";
 
       Tensor &proposals = box_score_pair.first;
       Tensor &scores = box_score_pair.second;
@@ -201,11 +235,13 @@ class CUDAGenerateProposalsV2Kernel : public framework::OpKernel<T> {
       memory::Copy(place, rpn_roi_probs_data + num_proposals, place,
                    scores.data<T>(), sizeof(T) * scores.numel(),
                    dev_ctx.stream());
+      LOG(ERROR)<<"DEBUG!!!!";
       dev_ctx.Wait();
       num_proposals += proposals.dims()[0];
       offset.emplace_back(num_proposals);
       tmp_num.push_back(proposals.dims()[0]);
     }
+    LOG(ERROR)<<"DEBUG!!!!";
     if (context.HasOutput("RpnRoisNum")) {
       auto *rpn_rois_num = context.Output<Tensor>("RpnRoisNum");
       rpn_rois_num->mutable_data<int>({num}, context.GetPlace());
@@ -214,6 +250,7 @@ class CUDAGenerateProposalsV2Kernel : public framework::OpKernel<T> {
                    dev_ctx.stream());
       rpn_rois_num->Resize({num});
     }
+    LOG(ERROR)<<"DEBUG!!!!";
     framework::LoD lod;
     lod.emplace_back(offset);
     rpn_rois->set_lod(lod);
